@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { applyCipher } from './lib/engine';
 import './index.css';
 
@@ -6,6 +6,8 @@ function App() {
   const [nodes, setNodes] = useState([]);
   const [inputData, setInputData] = useState('Welcome to Vyrothon');
   const [mode, setMode] = useState('encrypt');
+  const [autoRun, setAutoRun] = useState(false);
+  const [validationState, setValidationState] = useState(null);
 
   const [isRunning, setIsRunning] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
@@ -16,6 +18,10 @@ function App() {
   const [outputExpanded, setOutputExpanded] = useState(false);
   const [showDropdown, setShowDropdown] = useState(false);
 
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [importText, setImportText] = useState('');
+  const [importError, setImportError] = useState('');
+
   const showToast = (msg) => {
     setToastMsg(msg);
     setTimeout(() => setToastMsg(''), 3000);
@@ -24,9 +30,7 @@ function App() {
   useEffect(() => {
     if (activeStep !== -1) {
       const el = document.getElementById(`node-card-${activeStep}`);
-      if (el) {
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-      }
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   }, [activeStep]);
 
@@ -37,17 +41,35 @@ function App() {
     else if (type === 'XOR') config = { key: 'secret' };
     else if (type === 'RAIL_FENCE') config = { rails: 3 };
 
-    const newNode = {
+    setNodes(prev => [...prev, {
       id: Date.now() + Math.random().toString(36).substring(2),
       type,
-      config
-    };
-    setNodes(prev => [...prev, newNode]);
+      config,
+      isActive: true
+    }]);
     setPipelineResults({ finalOutput: '', steps: [] });
   };
 
   const removeNode = (id) => {
     setNodes(nodes.filter(n => n.id !== id));
+    setPipelineResults({ finalOutput: '', steps: [] });
+  };
+
+  const duplicateNode = (id) => {
+    const nodeToCopy = nodes.find(n => n.id === id);
+    if (!nodeToCopy) return;
+    const index = nodes.findIndex(n => n.id === id);
+    const newNodes = [...nodes];
+    newNodes.splice(index + 1, 0, {
+      ...nodeToCopy,
+      id: Date.now() + Math.random().toString(36).substring(2)
+    });
+    setNodes(newNodes);
+    setPipelineResults({ finalOutput: '', steps: [] });
+  };
+
+  const toggleNodeActive = (id) => {
+    setNodes(nodes.map(n => n.id === id ? { ...n, isActive: n.isActive === false ? true : false } : n));
     setPipelineResults({ finalOutput: '', steps: [] });
   };
 
@@ -67,29 +89,35 @@ function App() {
     setPipelineResults({ finalOutput: '', steps: [] });
   };
 
-  const configurableCount = nodes.filter(n => !['BASE64', 'REVERSE'].includes(n.type)).length;
+  const configurableCount = nodes.filter(n => !['BASE64', 'REVERSE'].includes(n.type) && n.isActive !== false).length;
   const isInvalid = !inputData.trim() || configurableCount < 3;
 
   const displayNodes = mode === 'encrypt' 
     ? nodes.map((n, i) => ({ ...n, realIdx: i }))
     : [...nodes].map((n, i) => ({ ...n, realIdx: i })).reverse();
 
-  const handleRunAnimated = async () => {
+  const handleRun = async (animated = true) => {
     if (isInvalid) return;
 
     setIsRunning(true);
-    setPipelineResults({ finalOutput: '', steps: [] });
-    setOutputExpanded(true);
+    setValidationState(null);
+    if (animated) {
+      setPipelineResults({ finalOutput: '', steps: [] });
+      setOutputExpanded(true);
+    }
     
     let currentState = inputData;
     let accumulatedSteps = [];
     const isDecrypt = mode === 'decrypt';
+    const activeDisplayNodes = displayNodes.filter(n => n.isActive !== false);
 
-    for (let i = 0; i < displayNodes.length; i++) {
-      setActiveStep(displayNodes[i].id); 
-      await new Promise(r => setTimeout(r, 600)); 
+    for (let i = 0; i < activeDisplayNodes.length; i++) {
+      if (animated) {
+        setActiveStep(activeDisplayNodes[i].id); 
+        await new Promise(r => setTimeout(r, 600)); 
+      }
       
-      const node = displayNodes[i];
+      const node = activeDisplayNodes[i];
       const output = applyCipher(node.type, currentState, node.config, isDecrypt);
       
       accumulatedSteps.push({
@@ -100,15 +128,34 @@ function App() {
         output: output
       });
       
-      setPipelineResults({ finalOutput: '', steps: [...accumulatedSteps] });
+      if (animated) setPipelineResults({ finalOutput: '', steps: [...accumulatedSteps] });
       currentState = output;
     }
     
-    await new Promise(r => setTimeout(r, 300)); 
-    setActiveStep(-1);
+    if (animated) {
+      await new Promise(r => setTimeout(r, 300)); 
+      setActiveStep(-1);
+    }
+    
     setPipelineResults({ finalOutput: currentState, steps: accumulatedSteps });
     setIsRunning(false);
+
+    if (mode === 'encrypt' && activeDisplayNodes.length > 0) {
+      const reversePath = [...activeDisplayNodes].reverse();
+      let reverseState = currentState;
+      for (const node of reversePath) {
+        reverseState = applyCipher(node.type, reverseState, node.config, true);
+      }
+      setValidationState(reverseState === inputData ? 'success' : 'failure');
+    }
   };
+
+  useEffect(() => {
+    if (autoRun && !isInvalid && !isRunning) {
+      const debounce = setTimeout(() => handleRun(false), 300);
+      return () => clearTimeout(debounce);
+    }
+  }, [nodes, inputData, autoRun, mode]);
 
   const handleCopy = () => {
     if (pipelineResults.finalOutput) {
@@ -119,29 +166,79 @@ function App() {
   };
 
   const exportConfig = () => {
-    const configStr = JSON.stringify(nodes);
-    navigator.clipboard.writeText(configStr);
+    const exportFormat = {
+      version: 1,
+      pipeline: nodes.map(n => ({
+        type: n.type.toLowerCase(),
+        ...n.config
+      }))
+    };
+    navigator.clipboard.writeText(JSON.stringify(exportFormat, null, 2));
     showToast('Pipeline exported to clipboard!');
   };
 
   const importConfig = () => {
-    const data = prompt('Paste your JSON pipeline config:');
-    if (!data) return;
-    try {
-      const parsed = JSON.parse(data);
-      if (Array.isArray(parsed)) {
-        setNodes(parsed);
-        setPipelineResults({ finalOutput: '', steps: [] });
-        showToast('Pipeline imported successfully!');
-      }
-    } catch {
-      showToast('Error: Invalid JSON config.');
-    }
+    setImportText('');
+    setImportError('');
+    setShowImportModal(true);
   };
 
   return (
     <div className="app-container">
       {toastMsg && <div className="global-toast">{toastMsg}</div>}
+
+      {showImportModal && (
+        <div className="modal-overlay" onClick={() => setShowImportModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <h3>Import Pipeline</h3>
+            <textarea 
+              autoFocus
+              value={importText} 
+              onChange={e => { setImportText(e.target.value); setImportError(''); }}
+              placeholder="Paste your JSON array here..."
+              className="modal-textarea"
+            />
+            {importError && <div className="modal-error">{importError}</div>}
+            <div className="modal-actions">
+              <button className="utility-btn" onClick={() => setShowImportModal(false)}>Cancel</button>
+              <button 
+                className="primary-btn" 
+                onClick={() => {
+                  try {
+                    const parsed = JSON.parse(importText);
+                    const pipelineData = parsed.version === 1 ? parsed.pipeline : (Array.isArray(parsed) ? parsed : null);
+                    
+                    if (pipelineData && Array.isArray(pipelineData)) {
+                      const reconstructedNodes = pipelineData.map(item => {
+                        const { type, config: oldConfig, id: oldId, isActive, ...rest } = item;
+                        return {
+                          id: Date.now() + Math.random().toString(36).substring(2),
+                          type: String(type).toUpperCase(),
+                          config: oldConfig || rest,
+                          isActive: true
+                        };
+                      });
+                      
+                      setNodes(reconstructedNodes);
+                      setPipelineResults({ finalOutput: '', steps: [] });
+                      setShowImportModal(false);
+                      setImportText('');
+                      showToast('Pipeline imported successfully!');
+                    } else {
+                      setImportError('Invalid format. Missing pipeline array.');
+                    }
+                  } catch {
+                    setImportError('Invalid JSON format.');
+                  }
+                }}
+                disabled={!importText.trim()}
+              >
+                Import
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       <header className="header">
         <h1>CipherStack</h1>
@@ -151,7 +248,12 @@ function App() {
       <div className="main-content">
         <div className="panel left-panel">
           <div className="config-section">
-            <label className="section-label">Mode</label>
+            <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
+              <label className="section-label">Mode</label>
+              <label style={{display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', cursor: 'pointer', color: autoRun ? '#10b981' : '#64748b', fontWeight: 600}}>
+                <input type="checkbox" checked={autoRun} onChange={(e) => setAutoRun(e.target.checked)} style={{cursor: 'pointer'}}/> Auto-Run
+              </label>
+            </div>
             <div className="mode-toggle">
               <button 
                 className={mode === 'encrypt' ? 'active encrypt' : ''} 
@@ -160,6 +262,7 @@ function App() {
                     if (pipelineResults.finalOutput) setInputData(pipelineResults.finalOutput);
                     setMode('encrypt'); 
                     setPipelineResults({ finalOutput: '', steps: [] }); 
+                    setValidationState(null);
                   }
                 }}
               >
@@ -172,6 +275,7 @@ function App() {
                     if (pipelineResults.finalOutput) setInputData(pipelineResults.finalOutput);
                     setMode('decrypt'); 
                     setPipelineResults({ finalOutput: '', steps: [] }); 
+                    setValidationState(null);
                   }
                 }}
               >
@@ -185,7 +289,7 @@ function App() {
             <textarea 
               className="input-textarea"
               value={inputData} 
-              onChange={(e) => { setInputData(e.target.value); setPipelineResults({ finalOutput: '', steps: [] }); }}
+              onChange={(e) => { setInputData(e.target.value); setPipelineResults({ finalOutput: '', steps: [] }); setValidationState(null); }}
               placeholder="Enter text to encrypt or decrypt..."
             />
           </div>
@@ -263,14 +367,21 @@ function App() {
             {displayNodes.map((node, index) => {
               const stepResult = pipelineResults.steps.find(s => s.id === node.id);
               const isActive = activeStep === node.id;
+              const isNodeDisabled = node.isActive === false;
               
               return (
                 <div key={node.id} id={`node-card-${node.id}`} className="node-wrapper z-10 relative">
-                  <div className={`node-card ${isActive ? 'active-glow' : ''}`}>
-                    <div className="node-step-tag">Step {index + 1}</div>
+                  <div className={`node-card ${isActive ? 'active-glow' : ''}`} style={{ opacity: isNodeDisabled ? 0.4 : 1, filter: isNodeDisabled ? 'grayscale(1)' : 'none' }}>
+                    <div className="node-step-tag" style={{ background: isNodeDisabled ? '#475569' : '' }}>
+                      {isNodeDisabled ? 'SKIPPED' : `Step ${index + 1}`}
+                    </div>
                     <div className="node-header">
                       <h3>{node.type.replace('_', ' ')}</h3>
                       <div className="node-actions relative z-20">
+                        <button onClick={() => toggleNodeActive(node.id)} disabled={isRunning} title={isNodeDisabled ? "Enable Node" : "Disable Node"}>
+                          {isNodeDisabled ? '⏻' : '⏼'}
+                        </button>
+                        <button onClick={() => duplicateNode(node.id)} disabled={isRunning} title="Duplicate Node">⧉</button>
                         <button onClick={() => moveNode(node.realIdx, -1)} disabled={node.realIdx === 0 || isRunning}>↑</button>
                         <button onClick={() => moveNode(node.realIdx, 1)} disabled={node.realIdx === nodes.length - 1 || isRunning}>↓</button>
                         <button className="delete" onClick={() => removeNode(node.id)} disabled={isRunning}>✕</button>
@@ -281,25 +392,25 @@ function App() {
                       {node.type === 'CAESAR' && (
                         <label>
                           Shift
-                          <input type="number" value={node.config.shift} onChange={(e) => updateConfig(node.id, 'shift', e.target.value)} disabled={isRunning} />
+                          <input type="number" value={node.config.shift} onChange={(e) => updateConfig(node.id, 'shift', e.target.value)} disabled={isRunning || isNodeDisabled} />
                         </label>
                       )}
                       {node.type === 'XOR' && (
                         <label>
                           Key
-                          <input type="text" value={node.config.key} onChange={(e) => updateConfig(node.id, 'key', e.target.value)} disabled={isRunning}/>
+                          <input type="text" value={node.config.key} onChange={(e) => updateConfig(node.id, 'key', e.target.value)} disabled={isRunning || isNodeDisabled}/>
                         </label>
                       )}
                       {node.type === 'VIGENERE' && (
                         <label>
                           Keyword
-                          <input type="text" value={node.config.keyword} onChange={(e) => updateConfig(node.id, 'keyword', e.target.value)} disabled={isRunning}/>
+                          <input type="text" value={node.config.keyword} onChange={(e) => updateConfig(node.id, 'keyword', e.target.value)} disabled={isRunning || isNodeDisabled}/>
                         </label>
                       )}
                       {node.type === 'RAIL_FENCE' && (
                         <label>
                           Rails
-                          <input type="number" min="2" value={node.config.rails} onChange={(e) => updateConfig(node.id, 'rails', e.target.value)} disabled={isRunning}/>
+                          <input type="number" min="2" value={node.config.rails} onChange={(e) => updateConfig(node.id, 'rails', e.target.value)} disabled={isRunning || isNodeDisabled}/>
                         </label>
                       )}
                     </div>
@@ -320,7 +431,7 @@ function App() {
                   </div>
 
                   {index < displayNodes.length - 1 && (
-                    <div className="pipeline-connector">
+                    <div className="pipeline-connector" style={{ opacity: isNodeDisabled ? 0.4 : 1 }}>
                       ↓
                     </div>
                   )}
@@ -336,7 +447,7 @@ function App() {
           <div className="execution-controls relative z-50">
             <button 
               className={`run-button ${isRunning ? 'spinning' : ''}`}
-              onClick={handleRunAnimated}
+              onClick={() => handleRun(true)}
               disabled={isRunning || Boolean(!inputData.trim() && !isRunning)}
             >
               {isRunning ? '▶ PROCESSING...' : '▶ EXECUTE'}
@@ -347,6 +458,17 @@ function App() {
                 ? <div className="status-msg valid">✓ Pipeline configuration valid</div> 
                 : <div className="status-msg invalid">Add at least {3 - configurableCount} configurable ciphers.</div>}
             </div>
+            
+            {validationState === 'success' && (
+              <div className="status-msg valid" style={{marginTop: '0.5rem', background: 'rgba(16, 185, 129, 0.1)', borderColor: '#10b981'}}>
+                🛡️ Round-trip validation passed!
+              </div>
+            )}
+            {validationState === 'failure' && (
+              <div className="status-msg invalid" style={{marginTop: '0.5rem', background: 'rgba(239, 68, 68, 0.1)', borderColor: '#ef4444'}}>
+                ⚠️ Round-trip loss detected.
+              </div>
+            )}
           </div>
           
           <div className="final-output-container mt-4 relative z-20 flex-1 flex-col">
