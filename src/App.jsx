@@ -9,7 +9,7 @@ function App() {
 
   const [isRunning, setIsRunning] = useState(false);
   const [activeStep, setActiveStep] = useState(-1);
-  const [results, setResults] = useState({ finalOutput: '', steps: [] });
+  const [pipelineResults, setPipelineResults] = useState({ finalOutput: '', steps: [] });
   const [copied, setCopied] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
   
@@ -21,7 +21,6 @@ function App() {
     setTimeout(() => setToastMsg(''), 3000);
   };
 
-  // Auto-scroll to active node during animation
   useEffect(() => {
     if (activeStep !== -1) {
       const el = document.getElementById(`node-card-${activeStep}`);
@@ -44,28 +43,28 @@ function App() {
       config
     };
     setNodes(prev => [...prev, newNode]);
-    setResults({ finalOutput: '', steps: [] });
+    setPipelineResults({ finalOutput: '', steps: [] });
   };
 
   const removeNode = (id) => {
     setNodes(nodes.filter(n => n.id !== id));
-    setResults({ finalOutput: '', steps: [] });
+    setPipelineResults({ finalOutput: '', steps: [] });
   };
 
   const moveNode = (index, direction) => {
     if (index + direction < 0 || index + direction >= nodes.length) return;
     const newNodes = [...nodes];
-    const [temp] = newNodes.splice(index, 1);
-    newNodes.splice(index + direction, 0, temp);
+    const [movedNode] = newNodes.splice(index, 1);
+    newNodes.splice(index + direction, 0, movedNode);
     setNodes(newNodes);
-    setResults({ finalOutput: '', steps: [] });
+    setPipelineResults({ finalOutput: '', steps: [] });
   };
 
   const updateConfig = (id, key, value) => {
     setNodes(nodes.map(n => 
       n.id === id ? { ...n, config: { ...n.config, [key]: value } } : n
     ));
-    setResults({ finalOutput: '', steps: [] });
+    setPipelineResults({ finalOutput: '', steps: [] });
   };
 
   const configurableCount = nodes.filter(n => !['BASE64', 'REVERSE'].includes(n.type)).length;
@@ -79,43 +78,41 @@ function App() {
     if (isInvalid) return;
 
     setIsRunning(true);
-    setResults({ finalOutput: '', steps: [] });
-    // Auto-expand output panel on run
+    setPipelineResults({ finalOutput: '', steps: [] });
     setOutputExpanded(true);
     
-    let currentText = inputData;
+    let currentState = inputData;
     let accumulatedSteps = [];
     const isDecrypt = mode === 'decrypt';
 
-    // Execute step-by-step
     for (let i = 0; i < displayNodes.length; i++) {
       setActiveStep(displayNodes[i].id); 
       await new Promise(r => setTimeout(r, 600)); 
       
       const node = displayNodes[i];
-      const output = applyCipher(node.type, currentText, node.config, isDecrypt);
+      const output = applyCipher(node.type, currentState, node.config, isDecrypt);
       
       accumulatedSteps.push({
         id: node.id,
         nodeType: node.type,
         config: node.config,
-        input: currentText,
+        input: currentState,
         output: output
       });
       
-      setResults({ finalOutput: '', steps: [...accumulatedSteps] });
-      currentText = output;
+      setPipelineResults({ finalOutput: '', steps: [...accumulatedSteps] });
+      currentState = output;
     }
     
     await new Promise(r => setTimeout(r, 300)); 
     setActiveStep(-1);
-    setResults({ finalOutput: currentText, steps: accumulatedSteps });
+    setPipelineResults({ finalOutput: currentState, steps: accumulatedSteps });
     setIsRunning(false);
   };
 
   const handleCopy = () => {
-    if (results.finalOutput) {
-      navigator.clipboard.writeText(results.finalOutput);
+    if (pipelineResults.finalOutput) {
+      navigator.clipboard.writeText(pipelineResults.finalOutput);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     }
@@ -134,10 +131,10 @@ function App() {
       const parsed = JSON.parse(data);
       if (Array.isArray(parsed)) {
         setNodes(parsed);
-        setResults({ finalOutput: '', steps: [] });
+        setPipelineResults({ finalOutput: '', steps: [] });
         showToast('Pipeline imported successfully!');
       }
-    } catch (e) {
+    } catch {
       showToast('Error: Invalid JSON config.');
     }
   };
@@ -152,9 +149,7 @@ function App() {
       </header>
 
       <div className="main-content">
-        {/* LEFT PANEL: Inputs & Nodes */}
         <div className="panel left-panel">
-          
           <div className="config-section">
             <label className="section-label">Mode</label>
             <div className="mode-toggle">
@@ -162,9 +157,9 @@ function App() {
                 className={mode === 'encrypt' ? 'active encrypt' : ''} 
                 onClick={() => { 
                   if (mode !== 'encrypt') {
-                    if (results.finalOutput) setInputData(results.finalOutput);
+                    if (pipelineResults.finalOutput) setInputData(pipelineResults.finalOutput);
                     setMode('encrypt'); 
-                    setResults({ finalOutput: '', steps: [] }); 
+                    setPipelineResults({ finalOutput: '', steps: [] }); 
                   }
                 }}
               >
@@ -174,9 +169,9 @@ function App() {
                 className={mode === 'decrypt' ? 'active decrypt' : ''} 
                 onClick={() => { 
                   if (mode !== 'decrypt') {
-                    if (results.finalOutput) setInputData(results.finalOutput);
+                    if (pipelineResults.finalOutput) setInputData(pipelineResults.finalOutput);
                     setMode('decrypt'); 
-                    setResults({ finalOutput: '', steps: [] }); 
+                    setPipelineResults({ finalOutput: '', steps: [] }); 
                   }
                 }}
               >
@@ -190,7 +185,7 @@ function App() {
             <textarea 
               className="input-textarea"
               value={inputData} 
-              onChange={(e) => { setInputData(e.target.value); setResults({ finalOutput: '', steps: [] }); }}
+              onChange={(e) => { setInputData(e.target.value); setPipelineResults({ finalOutput: '', steps: [] }); }}
               placeholder="Enter text to encrypt or decrypt..."
             />
           </div>
@@ -234,7 +229,7 @@ function App() {
             </div>
           </div>
 
-          <div className="add-nodes mt-auto hidden-mobile">
+          <div className="utility-section mt-auto hidden-mobile">
             <div className="button-group horizontal">
               <button onClick={exportConfig} className="utility-btn" disabled={isRunning}>Export JSON</button>
               <button onClick={importConfig} className="utility-btn" disabled={isRunning}>Import JSON</button>
@@ -242,7 +237,6 @@ function App() {
           </div>
         </div>
 
-        {/* MIDDLE PANEL: Pipeline */}
         <div className={`panel middle-panel pipeline-panel ${isRunning ? 'pipeline-running' : ''}`}>
           <div className="pipeline-header-flex">
             <h2 className="desktop-only">[2] Pipeline Execution</h2>
@@ -266,14 +260,14 @@ function App() {
           )}
           
           <div className="pipeline-stack">
-            {displayNodes.map((node, loopIdx) => {
-              const stepResult = results.steps.find(s => s.id === node.id);
+            {displayNodes.map((node, index) => {
+              const stepResult = pipelineResults.steps.find(s => s.id === node.id);
               const isActive = activeStep === node.id;
               
               return (
                 <div key={node.id} id={`node-card-${node.id}`} className="node-wrapper z-10 relative">
                   <div className={`node-card ${isActive ? 'active-glow' : ''}`}>
-                    <div className="node-step-tag">Step {loopIdx + 1}</div>
+                    <div className="node-step-tag">Step {index + 1}</div>
                     <div className="node-header">
                       <h3>{node.type.replace('_', ' ')}</h3>
                       <div className="node-actions relative z-20">
@@ -325,8 +319,7 @@ function App() {
                     )}
                   </div>
 
-                  {/* Structural Arrow between nodes */}
-                  {loopIdx < displayNodes.length - 1 && (
+                  {index < displayNodes.length - 1 && (
                     <div className="pipeline-connector">
                       ↓
                     </div>
@@ -337,7 +330,6 @@ function App() {
           </div>
         </div>
 
-        {/* RIGHT PANEL: Execution & Output */}
         <div className="panel right-panel">
           <h2 className="desktop-only">[3] Control & Status</h2>
           
@@ -367,22 +359,22 @@ function App() {
             
             <div className={`collapsible-content ${outputExpanded ? 'expanded' : ''} desktop-expanded flex-1-y`}>
               <textarea 
-                value={results.finalOutput} 
+                value={pipelineResults.finalOutput} 
                 readOnly
-                className={`final-output fill-height ${results.finalOutput ? 'has-data' : ''}`}
+                className={`final-output fill-height ${pipelineResults.finalOutput ? 'has-data' : ''}`}
                 placeholder="..."
                 rows={8}
               />
-              <button onClick={handleCopy} className="copy-button" disabled={!results.finalOutput}>
+              <button onClick={handleCopy} className="copy-button" disabled={!pipelineResults.finalOutput}>
                 {copied ? '✓ COPIED!' : '📋 Copy'}
               </button>
             </div>
           </div>
 
-          <div className="add-nodes mt-auto mobile-only mobile-utilities">
+          <div className="utility-section mt-auto mobile-only mobile-utilities">
             <div className="button-group horizontal">
-              <button onClick={exportConfig} className="utility" disabled={isRunning}>Export</button>
-              <button onClick={importConfig} className="utility" disabled={isRunning}>Import</button>
+              <button onClick={exportConfig} className="utility-btn" disabled={isRunning}>Export</button>
+              <button onClick={importConfig} className="utility-btn" disabled={isRunning}>Import</button>
             </div>
           </div>
           

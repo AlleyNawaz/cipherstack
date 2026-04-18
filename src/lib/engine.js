@@ -11,7 +11,7 @@ export function applyCipher(type, text, config, isDecrypt) {
     case 'BASE64':
       return base64(text, isDecrypt);
     case 'REVERSE':
-      return reverseStr(text); // Reverse is its own inverse!
+      return reverseStr(text);
     case 'RAIL_FENCE':
       return railFence(text, config.rails, isDecrypt);
     default:
@@ -20,23 +20,21 @@ export function applyCipher(type, text, config, isDecrypt) {
 }
 
 export function runPipeline(text, nodes, isDecrypt) {
-  let currentText = text || '';
-  let steps = [];
-  
-  // Decryption runs backwards
+  let pipelineState = text || '';
+  const historyList = [];
   const executionPath = isDecrypt ? [...nodes].reverse() : nodes;
   
   for (const node of executionPath) {
-    const output = applyCipher(node.type, currentText, node.config, isDecrypt);
-    steps.push({
+    const transformed = applyCipher(node.type, pipelineState, node.config, isDecrypt);
+    historyList.push({
       id: node.id,
       nodeType: node.type,
       config: node.config,
-      input: currentText,
-      output: output
+      input: pipelineState,
+      output: transformed
     });
-    currentText = output;
+    pipelineState = transformed;
   }
   
-  return { finalOutput: currentText, steps };
+  return { finalOutput: pipelineState, steps: historyList };
 }
