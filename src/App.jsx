@@ -197,7 +197,23 @@ function App() {
 
           <div className="add-nodes relative-layer">
             <label className="section-label">Add cipher sequence</label>
-            <div className="dropdown-container">
+            
+            <div className="desktop-only mt-2">
+              <div className="cipher-category-label">Core Ciphers</div>
+              <div className="cipher-grid">
+                <button onClick={() => addNode('CAESAR')}>+ Caesar</button>
+                <button onClick={() => addNode('XOR')}>+ XOR</button>
+                <button onClick={() => addNode('VIGENERE')}>+ Vigenère</button>
+              </div>
+              <div className="cipher-category-label mt-4">Structural Transforms</div>
+              <div className="cipher-grid mt-2">
+                <button onClick={() => addNode('BASE64')}>+ Base64</button>
+                <button onClick={() => addNode('REVERSE')}>+ Reverse</button>
+                <button onClick={() => addNode('RAIL_FENCE')}>+ Rail Fence</button>
+              </div>
+            </div>
+
+            <div className="mobile-only dropdown-container">
               <button 
                 className="native-select dropdown-toggle-btn"
                 onClick={() => setShowDropdown(!showDropdown)}
@@ -220,14 +236,14 @@ function App() {
 
           <div className="add-nodes mt-auto hidden-mobile">
             <div className="button-group horizontal">
-              <button onClick={exportConfig} className="utility" disabled={isRunning}>Export JSON</button>
-              <button onClick={importConfig} className="utility" disabled={isRunning}>Import JSON</button>
+              <button onClick={exportConfig} className="utility-btn" disabled={isRunning}>Export JSON</button>
+              <button onClick={importConfig} className="utility-btn" disabled={isRunning}>Import JSON</button>
             </div>
           </div>
         </div>
 
         {/* MIDDLE PANEL: Pipeline */}
-        <div className="panel middle-panel pipeline-panel">
+        <div className={`panel middle-panel pipeline-panel ${isRunning ? 'pipeline-running' : ''}`}>
           <div className="pipeline-header-flex">
             <h2 className="desktop-only">[2] Pipeline Execution</h2>
             <h2 className="mobile-only">Pipeline ({nodes.length})</h2>
@@ -237,7 +253,16 @@ function App() {
           </div>
           
           {nodes.length === 0 && (
-            <div className="empty-state">Add ciphers from the panel to begin.</div>
+            <div className="canvas-empty-state">
+              <div className="icon-wrapper">
+                <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5} className="canvas-icon">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
+                </svg>
+              </div>
+              <h3 className="desktop-only text-canvas">Pipeline Canvas is Empty</h3>
+              <h3 className="mobile-only text-canvas">Empty</h3>
+              <p>Select a cipher on the left to begin stacking your sequence.</p>
+            </div>
           )}
           
           <div className="pipeline-stack">
@@ -332,7 +357,7 @@ function App() {
             </div>
           </div>
           
-          <div className="final-output-container mt-auto relative z-20">
+          <div className="final-output-container mt-4 relative z-20 flex-1 flex-col">
             <button 
               className="collapse-toggle mobile-only" 
               onClick={() => setOutputExpanded(!outputExpanded)}>
@@ -340,11 +365,11 @@ function App() {
             </button>
             <label className="section-label glow-label desktop-only">FINAL ENCRYPTED OUTPUT</label>
             
-            <div className={`collapsible-content ${outputExpanded ? 'expanded' : ''} desktop-expanded`}>
+            <div className={`collapsible-content ${outputExpanded ? 'expanded' : ''} desktop-expanded flex-1-y`}>
               <textarea 
                 value={results.finalOutput} 
                 readOnly
-                className={`final-output ${results.finalOutput ? 'has-data' : ''}`}
+                className={`final-output fill-height ${results.finalOutput ? 'has-data' : ''}`}
                 placeholder="..."
                 rows={8}
               />
