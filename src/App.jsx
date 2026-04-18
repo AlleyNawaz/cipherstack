@@ -12,6 +12,9 @@ function App() {
   const [results, setResults] = useState({ finalOutput: '', steps: [] });
   const [copied, setCopied] = useState(false);
   const [toastMsg, setToastMsg] = useState('');
+  
+  const [outputExpanded, setOutputExpanded] = useState(false);
+  const [showDropdown, setShowDropdown] = useState(false);
 
   const showToast = (msg) => {
     setToastMsg(msg);
@@ -36,11 +39,11 @@ function App() {
     else if (type === 'RAIL_FENCE') config = { rails: 3 };
 
     const newNode = {
-      id: crypto.randomUUID(),
+      id: Date.now() + Math.random().toString(36).substring(2),
       type,
       config
     };
-    setNodes([...nodes, newNode]);
+    setNodes(prev => [...prev, newNode]);
     setResults({ finalOutput: '', steps: [] });
   };
 
@@ -68,7 +71,6 @@ function App() {
   const configurableCount = nodes.filter(n => !['BASE64', 'REVERSE'].includes(n.type)).length;
   const isInvalid = !inputData.trim() || configurableCount < 3;
 
-  // Reversing nodes order display for DECRYPT mode to show logical flow visually.
   const displayNodes = mode === 'encrypt' 
     ? nodes.map((n, i) => ({ ...n, realIdx: i }))
     : [...nodes].map((n, i) => ({ ...n, realIdx: i })).reverse();
@@ -78,17 +80,16 @@ function App() {
 
     setIsRunning(true);
     setResults({ finalOutput: '', steps: [] });
+    // Auto-expand output panel on run
+    setOutputExpanded(true);
     
     let currentText = inputData;
     let accumulatedSteps = [];
-
     const isDecrypt = mode === 'decrypt';
 
     // Execute step-by-step
     for (let i = 0; i < displayNodes.length; i++) {
-      setActiveStep(displayNodes[i].id); // Set currently crunching node
-      
-      // Artificial delay for visual flow
+      setActiveStep(displayNodes[i].id); 
       await new Promise(r => setTimeout(r, 600)); 
       
       const node = displayNodes[i];
@@ -106,7 +107,6 @@ function App() {
       currentText = output;
     }
     
-    // Final wait before clearing active step
     await new Promise(r => setTimeout(r, 300)); 
     setActiveStep(-1);
     setResults({ finalOutput: currentText, steps: accumulatedSteps });
@@ -148,13 +148,12 @@ function App() {
       
       <header className="header">
         <h1>CipherStack</h1>
-        <p className="subtitle">Node-Based Cascade Encryption Builder</p>
+        <p className="subtitle">Node-Based Cascade Encryption</p>
       </header>
 
       <div className="main-content">
         {/* LEFT PANEL: Inputs & Nodes */}
         <div className="panel left-panel">
-          <h2>[1] Configuration</h2>
           
           <div className="config-section">
             <label className="section-label">Mode</label>
@@ -189,26 +188,37 @@ function App() {
           <div className="config-section">
             <label className="section-label">Input</label>
             <textarea 
+              className="input-textarea"
               value={inputData} 
               onChange={(e) => { setInputData(e.target.value); setResults({ finalOutput: '', steps: [] }); }}
               placeholder="Enter text to encrypt or decrypt..."
-              rows={5}
             />
           </div>
 
-          <div className="add-nodes">
-            <label className="section-label">Add cipher to run pipeline</label>
-            <div className="button-group subtle">
-              <button onClick={() => addNode('CAESAR')}>+ Caesar</button>
-              <button onClick={() => addNode('XOR')}>+ XOR</button>
-              <button onClick={() => addNode('VIGENERE')}>+ Vigenère</button>
-              <button onClick={() => addNode('BASE64')}>+ Base64</button>
-              <button onClick={() => addNode('REVERSE')}>+ Reverse</button>
-              <button onClick={() => addNode('RAIL_FENCE')}>+ Rail Fence</button>
+          <div className="add-nodes relative-layer">
+            <label className="section-label">Add cipher sequence</label>
+            <div className="dropdown-container">
+              <button 
+                className="native-select dropdown-toggle-btn"
+                onClick={() => setShowDropdown(!showDropdown)}
+              >
+                + Select a Cipher {showDropdown ? '▲' : '▼'}
+              </button>
+              
+              {showDropdown && (
+                <div className="custom-dropdown-menu">
+                  <button onClick={() => { addNode('CAESAR'); setShowDropdown(false); }}>+ Caesar</button>
+                  <button onClick={() => { addNode('XOR'); setShowDropdown(false); }}>+ XOR</button>
+                  <button onClick={() => { addNode('VIGENERE'); setShowDropdown(false); }}>+ Vigenère</button>
+                  <button onClick={() => { addNode('BASE64'); setShowDropdown(false); }}>+ Base64</button>
+                  <button onClick={() => { addNode('REVERSE'); setShowDropdown(false); }}>+ Reverse</button>
+                  <button onClick={() => { addNode('RAIL_FENCE'); setShowDropdown(false); }}>+ Rail Fence</button>
+                </div>
+              )}
             </div>
           </div>
 
-          <div className="add-nodes mt-auto">
+          <div className="add-nodes mt-auto hidden-mobile">
             <div className="button-group horizontal">
               <button onClick={exportConfig} className="utility" disabled={isRunning}>Export JSON</button>
               <button onClick={importConfig} className="utility" disabled={isRunning}>Import JSON</button>
@@ -217,16 +227,17 @@ function App() {
         </div>
 
         {/* MIDDLE PANEL: Pipeline */}
-        <div className="panel middle-panel">
+        <div className="panel middle-panel pipeline-panel">
           <div className="pipeline-header-flex">
-            <h2>[2] Pipeline Execution ({nodes.length})</h2>
+            <h2 className="desktop-only">[2] Pipeline Execution</h2>
+            <h2 className="mobile-only">Pipeline ({nodes.length})</h2>
             {mode === 'decrypt' && nodes.length > 0 && (
-              <span className="reverse-badge">Running in reverse order</span>
+              <span className="reverse-badge">Reverse order</span>
             )}
           </div>
           
           {nodes.length === 0 && (
-            <div className="empty-state">Add ciphers from the left panel to begin.</div>
+            <div className="empty-state">Add ciphers from the panel to begin.</div>
           )}
           
           <div className="pipeline-stack">
@@ -235,19 +246,19 @@ function App() {
               const isActive = activeStep === node.id;
               
               return (
-                <div key={node.id} id={`node-card-${node.id}`} className="node-wrapper">
+                <div key={node.id} id={`node-card-${node.id}`} className="node-wrapper z-10 relative">
                   <div className={`node-card ${isActive ? 'active-glow' : ''}`}>
                     <div className="node-step-tag">Step {loopIdx + 1}</div>
                     <div className="node-header">
                       <h3>{node.type.replace('_', ' ')}</h3>
-                      <div className="node-actions">
+                      <div className="node-actions relative z-20">
                         <button onClick={() => moveNode(node.realIdx, -1)} disabled={node.realIdx === 0 || isRunning}>↑</button>
                         <button onClick={() => moveNode(node.realIdx, 1)} disabled={node.realIdx === nodes.length - 1 || isRunning}>↓</button>
                         <button className="delete" onClick={() => removeNode(node.id)} disabled={isRunning}>✕</button>
                       </div>
                     </div>
 
-                    <div className="node-config">
+                    <div className="node-config relative z-20">
                       {node.type === 'CAESAR' && (
                         <label>
                           Shift
@@ -277,12 +288,12 @@ function App() {
                     {stepResult && (
                       <div className="node-io-box">
                         <div className="io-line">
-                          <span className="io-muted">Input: </span>
+                          <span className="io-muted">IN: </span>
                           <span className="io-value">{stepResult.input || ' '}</span>
                         </div>
                         <div className="io-line separator">↓</div>
                         <div className="io-line highlighted">
-                          <span className="io-color">Output: </span>
+                          <span className="io-color">OUT: </span>
                           <span className="io-value primary-glow">{stepResult.output || ' '}</span>
                         </div>
                       </div>
@@ -303,36 +314,51 @@ function App() {
 
         {/* RIGHT PANEL: Execution & Output */}
         <div className="panel right-panel">
-          <h2>[3] Control & Status</h2>
+          <h2 className="desktop-only">[3] Control & Status</h2>
           
-          <div className="execution-controls">
+          <div className="execution-controls relative z-50">
             <button 
               className={`run-button ${isRunning ? 'spinning' : ''}`}
               onClick={handleRunAnimated}
               disabled={isRunning || Boolean(!inputData.trim() && !isRunning)}
             >
-              {isRunning ? '▶ PROCESSING...' : '▶ EXECUTE PIPELINE'}
+              {isRunning ? '▶ PROCESSING...' : '▶ EXECUTE'}
             </button>
             
             <div className="validation-box">
               {configurableCount >= 3 
                 ? <div className="status-msg valid">✓ Pipeline configuration valid</div> 
-                : <div className="status-msg invalid">Add at least {3 - configurableCount} configurable ciphers to run.</div>}
+                : <div className="status-msg invalid">Add at least {3 - configurableCount} configurable ciphers.</div>}
             </div>
           </div>
           
-          <div className="final-output-container mt-auto">
-            <label className="section-label glow-label">FINAL ENCRYPTED OUTPUT</label>
-            <textarea 
-              value={results.finalOutput} 
-              readOnly
-              className={`final-output ${results.finalOutput ? 'has-data' : ''}`}
-              placeholder="..."
-              rows={8}
-            />
-            <button onClick={handleCopy} className="copy-button" disabled={!results.finalOutput}>
-              {copied ? '✓ COPIED!' : '📋 Copy Output'}
+          <div className="final-output-container mt-auto relative z-20">
+            <button 
+              className="collapse-toggle mobile-only" 
+              onClick={() => setOutputExpanded(!outputExpanded)}>
+                FINAL OUTPUT {outputExpanded ? '▲' : '▼'}
             </button>
+            <label className="section-label glow-label desktop-only">FINAL ENCRYPTED OUTPUT</label>
+            
+            <div className={`collapsible-content ${outputExpanded ? 'expanded' : ''} desktop-expanded`}>
+              <textarea 
+                value={results.finalOutput} 
+                readOnly
+                className={`final-output ${results.finalOutput ? 'has-data' : ''}`}
+                placeholder="..."
+                rows={8}
+              />
+              <button onClick={handleCopy} className="copy-button" disabled={!results.finalOutput}>
+                {copied ? '✓ COPIED!' : '📋 Copy'}
+              </button>
+            </div>
+          </div>
+
+          <div className="add-nodes mt-auto mobile-only mobile-utilities">
+            <div className="button-group horizontal">
+              <button onClick={exportConfig} className="utility" disabled={isRunning}>Export</button>
+              <button onClick={importConfig} className="utility" disabled={isRunning}>Import</button>
+            </div>
           </div>
           
         </div>
