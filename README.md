@@ -1,21 +1,48 @@
-<<<<<<< HEAD
-# cipherstack
-Frontend app for constructing modular cipher pipelines with encryption, decryption, and intermediate outputs.
-=======
-# React + Vite
+# 🔐 CipherStack - Node-Based Cascade Encryption Builder
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+CipherStack is a mathematically robust, interactive visual tool for constructing cascade encryption pipelines. Chain multiple cipher algorithms together and literally *see* the transformation at every layer!
 
-Currently, two official plugins are available:
+## 🔥 "Winner-Tier" Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+* **Visual Pipeline Architecture**: Stack nodes perfectly in sequence to observe data flow layer by layer.
+* **Math-Secure `Text -> Hex -> Text` Safety**: Unlike normal XOR implementations that output non-printable bytes into textboxes, CipherStack intelligently transcodes XOR operations down to Hexadecimal logic. This guarantees perfect symmetry without fatal unicode bugs!
+* **Zero-Configuration "Magic" Inversion**: The pipeline execution engine completely understands its graph. Toggle "Decrypt" mode, and the application instantly **visibly reverses** your entire cascade stack UI on-screen and mathematically unravels the stack from bottom-to-top!
+* **The "Execution Moment"**: Feel the processing! CipherStack utilizes artificial execution boundaries, allowing you to configure endlessly without lag, and then fire a glowing `EXECUTE` pulse down the chain!
+* **Portability Guarantee (Import / Export JSON)**: Export your entire intricately designed node architecture straight to your clipboard and share it immediately across environments.
 
-## React Compiler
+## 🛠️ Built With
+- **React (Vite)**: For blistering fast startup execution and state management. Functional components hooked up natively via memoization.
+- **Vanilla CSS (No external UI frameworks!)**: 100% custom stylesheet featuring glassmorphic layers, pure CSS pulse animations, structural linear flexboxes, and dark-theme variables!
+- Algorithms Implemented:
+  - `Caesar Shift` (Integer Shift)
+  - `XOR Cipher` (Symmetric String Key)
+  - `Vigenère Cipher` (Polyalphabetic Keyword)
+  - `Base64 Mapping` (Data Encoding bonus!)
+  - `String Reverse` (Self-inverting transposition bonus!)
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## 🚀 How to Run Locally
 
-## Expanding the ESLint configuration
+You only need Node.js installed to fire up CipherStack:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
->>>>>>> f8274d8 (feat: setup base node system and encryption pipeline)
+```bash
+# 1. Clone the repository
+git clone https://github.com/AlleyNawaz/cipherstack.git
+
+# 2. Enter the directory
+cd cipherstack
+
+# 3. Install dependencies
+npm install
+
+# 4. Start the development server
+npm run dev
+```
+
+Open `http://localhost:5173` in your browser.
+
+## 🕹️ Quick Start Guide
+1. Launch the app and stay in **Encrypt Mode**. Add a `Caesar Shift` node and an `XOR` node. Enter some fun text into the left Data Input box.
+2. Click **EXECUTE PIPELINE** and observe the neon flow calculate the intermediate outputs.
+3. Once completed, your Final Encrypted Output will flash. Click **Copy Output**.
+4. Paste that exact output back into your original "Data Input" text box.
+5. Click **Decrypt Mode** (Watch the UI reverse!). Click **EXECUTE PIPELINE**. Your exact starting string will pop back out!
