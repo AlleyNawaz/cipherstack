@@ -1,22 +1,32 @@
 import { useState, useRef, useEffect } from 'react';
-import { runPipeline } from './lib/engine';
+import { applyCipher } from './lib/engine';
 import './index.css';
 
 function App() {
   const [nodes, setNodes] = useState([]);
-  const [inputData, setInputData] = useState('Hello Hackathon');
+  const [inputData, setInputData] = useState('Welcome to Vyrothon');
   const [mode, setMode] = useState('encrypt');
 
   const [isRunning, setIsRunning] = useState(false);
-  const [errorMsg, setErrorMsg] = useState('');
+  const [activeStep, setActiveStep] = useState(-1);
   const [results, setResults] = useState({ finalOutput: '', steps: [] });
   const [copied, setCopied] = useState(false);
+  const [toastMsg, setToastMsg] = useState('');
 
-  // Auto clean results if inputs/nodes dramatically change to avoid showing stale data.
-  // Actually, we'll keep it simple: any change just means "not run yet".
+  const showToast = (msg) => {
+    setToastMsg(msg);
+    setTimeout(() => setToastMsg(''), 3000);
+  };
+
+  // Auto-scroll to active node during animation
   useEffect(() => {
-    // If you want, you can clear results here, but sometimes it's nice to keep the old output until Run is clicked.
-  }, [nodes, inputData, mode]);
+    if (activeStep !== -1) {
+      const el = document.getElementById(`node-card-${activeStep}`);
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    }
+  }, [activeStep]);
 
   const addNode = (type) => {
     let config = {};
@@ -42,9 +52,8 @@ function App() {
   const moveNode = (index, direction) => {
     if (index + direction < 0 || index + direction >= nodes.length) return;
     const newNodes = [...nodes];
-    const temp = newNodes[index];
-    newNodes[index] = newNodes[index + direction];
-    newNodes[index + direction] = temp;
+    const [temp] = newNodes.splice(index, 1);
+    newNodes.splice(index + direction, 0, temp);
     setNodes(newNodes);
     setResults({ finalOutput: '', steps: [] });
   };
@@ -57,25 +66,51 @@ function App() {
   };
 
   const configurableCount = nodes.filter(n => !['BASE64', 'REVERSE'].includes(n.type)).length;
+  const isInvalid = !inputData.trim() || configurableCount < 3;
 
-  const handleRun = () => {
-    setErrorMsg('');
-    if (!inputData.trim()) {
-      setErrorMsg('Error: Plaintext input is empty.');
-      return;
-    }
-    if (configurableCount < 3) {
-      setErrorMsg(`Error: Need at least 3 configurable ciphers (Current: ${configurableCount}).`);
-      return;
-    }
+  // Reversing nodes order display for DECRYPT mode to show logical flow visually.
+  const displayNodes = mode === 'encrypt' 
+    ? nodes.map((n, i) => ({ ...n, realIdx: i }))
+    : [...nodes].map((n, i) => ({ ...n, realIdx: i })).reverse();
+
+  const handleRunAnimated = async () => {
+    if (isInvalid) return;
 
     setIsRunning(true);
-    // Fake processing time for "wow" effect (visual transformation)
-    setTimeout(() => {
-      const execResult = runPipeline(inputData, nodes, mode === 'decrypt');
-      setResults(execResult);
-      setIsRunning(false);
-    }, 600); // 600ms animated delay
+    setResults({ finalOutput: '', steps: [] });
+    
+    let currentText = inputData;
+    let accumulatedSteps = [];
+
+    const isDecrypt = mode === 'decrypt';
+
+    // Execute step-by-step
+    for (let i = 0; i < displayNodes.length; i++) {
+      setActiveStep(displayNodes[i].id); // Set currently crunching node
+      
+      // Artificial delay for visual flow
+      await new Promise(r => setTimeout(r, 600)); 
+      
+      const node = displayNodes[i];
+      const output = applyCipher(node.type, currentText, node.config, isDecrypt);
+      
+      accumulatedSteps.push({
+        id: node.id,
+        nodeType: node.type,
+        config: node.config,
+        input: currentText,
+        output: output
+      });
+      
+      setResults({ finalOutput: '', steps: [...accumulatedSteps] });
+      currentText = output;
+    }
+    
+    // Final wait before clearing active step
+    await new Promise(r => setTimeout(r, 300)); 
+    setActiveStep(-1);
+    setResults({ finalOutput: currentText, steps: accumulatedSteps });
+    setIsRunning(false);
   };
 
   const handleCopy = () => {
@@ -89,7 +124,7 @@ function App() {
   const exportConfig = () => {
     const configStr = JSON.stringify(nodes);
     navigator.clipboard.writeText(configStr);
-    alert('Pipeline exported to clipboard!');
+    showToast('Pipeline exported to clipboard!');
   };
 
   const importConfig = () => {
@@ -100,19 +135,17 @@ function App() {
       if (Array.isArray(parsed)) {
         setNodes(parsed);
         setResults({ finalOutput: '', steps: [] });
+        showToast('Pipeline imported successfully!');
       }
     } catch (e) {
-      alert('Invalid JSON config.');
+      showToast('Error: Invalid JSON config.');
     }
   };
 
-  // Reversing nodes order display for DECRYPT mode to show logical flow physically.
-  const displayNodes = mode === 'encrypt' 
-    ? nodes.map((n, i) => ({ ...n, realIdx: i }))
-    : [...nodes].map((n, i) => ({ ...n, realIdx: i })).reverse();
-
   return (
     <div className="app-container">
+      {toastMsg && <div className="global-toast">{toastMsg}</div>}
+      
       <header className="header">
         <h1>CipherStack</h1>
         <p className="subtitle">Node-Based Cascade Encryption Builder</p>
@@ -123,46 +156,62 @@ function App() {
         <div className="panel left-panel">
           <h2>[1] Configuration</h2>
           
-          <div className="mode-toggle">
-            <button 
-              className={mode === 'encrypt' ? 'active' : ''} 
-              onClick={() => { setMode('encrypt'); setResults({ finalOutput: '', steps: [] }); }}
-            >
-              🔒 Encrypt Mode
-            </button>
-            <button 
-              className={mode === 'decrypt' ? 'active' : ''} 
-              onClick={() => { setMode('decrypt'); setResults({ finalOutput: '', steps: [] }); }}
-            >
-              🔓 Decrypt Mode
-            </button>
+          <div className="config-section">
+            <label className="section-label">Mode</label>
+            <div className="mode-toggle">
+              <button 
+                className={mode === 'encrypt' ? 'active encrypt' : ''} 
+                onClick={() => { 
+                  if (mode !== 'encrypt') {
+                    if (results.finalOutput) setInputData(results.finalOutput);
+                    setMode('encrypt'); 
+                    setResults({ finalOutput: '', steps: [] }); 
+                  }
+                }}
+              >
+                🔒 Encrypt
+              </button>
+              <button 
+                className={mode === 'decrypt' ? 'active decrypt' : ''} 
+                onClick={() => { 
+                  if (mode !== 'decrypt') {
+                    if (results.finalOutput) setInputData(results.finalOutput);
+                    setMode('decrypt'); 
+                    setResults({ finalOutput: '', steps: [] }); 
+                  }
+                }}
+              >
+                🔓 Decrypt
+              </button>
+            </div>
           </div>
 
-          <label>Original Input Text:</label>
-          <textarea 
-            value={inputData} 
-            onChange={(e) => { setInputData(e.target.value); setResults({ finalOutput: '', steps: [] }); }}
-            placeholder="Data to encrypt or decrypt..."
-            rows={4}
-          />
+          <div className="config-section">
+            <label className="section-label">Input</label>
+            <textarea 
+              value={inputData} 
+              onChange={(e) => { setInputData(e.target.value); setResults({ finalOutput: '', steps: [] }); }}
+              placeholder="Enter text to encrypt or decrypt..."
+              rows={5}
+            />
+          </div>
 
           <div className="add-nodes">
-            <h3>Add Cipher Node</h3>
-            <div className="button-group">
-              <button onClick={() => addNode('CAESAR')}>➕ Caesar Shift</button>
-              <button onClick={() => addNode('XOR')}>➕ XOR Cipher</button>
-              <button onClick={() => addNode('VIGENERE')}>➕ Vigenère</button>
-              <button onClick={() => addNode('BASE64')} className="secondary">➕ Base64 (Bonus)</button>
-              <button onClick={() => addNode('REVERSE')} className="secondary">➕ Reverse (Bonus)</button>
-              <button onClick={() => addNode('RAIL_FENCE')} className="optional">➕ Rail Fence</button>
+            <label className="section-label">Add cipher to run pipeline</label>
+            <div className="button-group subtle">
+              <button onClick={() => addNode('CAESAR')}>+ Caesar</button>
+              <button onClick={() => addNode('XOR')}>+ XOR</button>
+              <button onClick={() => addNode('VIGENERE')}>+ Vigenère</button>
+              <button onClick={() => addNode('BASE64')}>+ Base64</button>
+              <button onClick={() => addNode('REVERSE')}>+ Reverse</button>
+              <button onClick={() => addNode('RAIL_FENCE')}>+ Rail Fence</button>
             </div>
           </div>
 
           <div className="add-nodes mt-auto">
-            <h3>Share & Save</h3>
             <div className="button-group horizontal">
-              <button onClick={exportConfig} className="utility">⬇ Export JSON</button>
-              <button onClick={importConfig} className="utility">⬆ Import JSON</button>
+              <button onClick={exportConfig} className="utility" disabled={isRunning}>Export JSON</button>
+              <button onClick={importConfig} className="utility" disabled={isRunning}>Import JSON</button>
             </div>
           </div>
         </div>
@@ -170,76 +219,80 @@ function App() {
         {/* MIDDLE PANEL: Pipeline */}
         <div className="panel middle-panel">
           <div className="pipeline-header-flex">
-            <h2>[2] Pipeline execution ({nodes.length})</h2>
+            <h2>[2] Pipeline Execution ({nodes.length})</h2>
             {mode === 'decrypt' && nodes.length > 0 && (
-              <span className="reverse-badge">Running in Reverse Order</span>
+              <span className="reverse-badge">Running in reverse order</span>
             )}
           </div>
           
           {nodes.length === 0 && (
-            <div className="empty-state">Workspace is empty. Add nodes to construct chain.</div>
+            <div className="empty-state">Add ciphers from the left panel to begin.</div>
           )}
           
-          <div className={`pipeline-stack ${isRunning ? 'is-running' : ''}`}>
+          <div className="pipeline-stack">
             {displayNodes.map((node, loopIdx) => {
               const stepResult = results.steps.find(s => s.id === node.id);
+              const isActive = activeStep === node.id;
               
-              // Move Up/Down button logic must map to REAL index, but also respect reverse mode visually correctly
               return (
-                <div key={node.id} className="node-card">
-                  <div className="node-step-tag">Step {loopIdx + 1}</div>
-                  <div className="node-header">
-                    <h3>{node.type.replace('_', ' ')}</h3>
-                    <div className="node-actions">
-                      <button onClick={() => moveNode(node.realIdx, -1)} disabled={node.realIdx === 0}>↑</button>
-                      <button onClick={() => moveNode(node.realIdx, 1)} disabled={node.realIdx === nodes.length - 1}>↓</button>
-                      <button className="delete" onClick={() => removeNode(node.id)}>✕</button>
-                    </div>
-                  </div>
-
-                  <div className="node-config">
-                    {node.type === 'CAESAR' && (
-                      <label>
-                        Shift Integer:
-                        <input type="number" value={node.config.shift} onChange={(e) => updateConfig(node.id, 'shift', e.target.value)} />
-                      </label>
-                    )}
-                    {node.type === 'XOR' && (
-                      <label>
-                        Secret Key:
-                        <input type="text" value={node.config.key} onChange={(e) => updateConfig(node.id, 'key', e.target.value)} />
-                      </label>
-                    )}
-                    {node.type === 'VIGENERE' && (
-                      <label>
-                        Keyword:
-                        <input type="text" value={node.config.keyword} onChange={(e) => updateConfig(node.id, 'keyword', e.target.value)} />
-                      </label>
-                    )}
-                    {node.type === 'RAIL_FENCE' && (
-                      <label>
-                        Number of Rails:
-                        <input type="number" min="2" value={node.config.rails} onChange={(e) => updateConfig(node.id, 'rails', e.target.value)} />
-                      </label>
-                    )}
-                    {['BASE64', 'REVERSE'].includes(node.type) && (
-                      <div className="no-config">No config parameters required.</div>
-                    )}
-                  </div>
-
-                  {stepResult ? (
-                    <div className="node-io success-glow">
-                      <div className="io-box">
-                        <span className="io-label">RECEIVED:</span> {stepResult.input || '-'}
-                      </div>
-                      <div className="io-arrow-anim">↓ Processed ↓</div>
-                      <div className="io-box out">
-                        <span className="io-label">OUTPUT:</span> {stepResult.output || '-'}
+                <div key={node.id} id={`node-card-${node.id}`} className="node-wrapper">
+                  <div className={`node-card ${isActive ? 'active-glow' : ''}`}>
+                    <div className="node-step-tag">Step {loopIdx + 1}</div>
+                    <div className="node-header">
+                      <h3>{node.type.replace('_', ' ')}</h3>
+                      <div className="node-actions">
+                        <button onClick={() => moveNode(node.realIdx, -1)} disabled={node.realIdx === 0 || isRunning}>↑</button>
+                        <button onClick={() => moveNode(node.realIdx, 1)} disabled={node.realIdx === nodes.length - 1 || isRunning}>↓</button>
+                        <button className="delete" onClick={() => removeNode(node.id)} disabled={isRunning}>✕</button>
                       </div>
                     </div>
-                  ) : (
-                    <div className="node-io pending">
-                      Awaiting Execution...
+
+                    <div className="node-config">
+                      {node.type === 'CAESAR' && (
+                        <label>
+                          Shift
+                          <input type="number" value={node.config.shift} onChange={(e) => updateConfig(node.id, 'shift', e.target.value)} disabled={isRunning} />
+                        </label>
+                      )}
+                      {node.type === 'XOR' && (
+                        <label>
+                          Key
+                          <input type="text" value={node.config.key} onChange={(e) => updateConfig(node.id, 'key', e.target.value)} disabled={isRunning}/>
+                        </label>
+                      )}
+                      {node.type === 'VIGENERE' && (
+                        <label>
+                          Keyword
+                          <input type="text" value={node.config.keyword} onChange={(e) => updateConfig(node.id, 'keyword', e.target.value)} disabled={isRunning}/>
+                        </label>
+                      )}
+                      {node.type === 'RAIL_FENCE' && (
+                        <label>
+                          Rails
+                          <input type="number" min="2" value={node.config.rails} onChange={(e) => updateConfig(node.id, 'rails', e.target.value)} disabled={isRunning}/>
+                        </label>
+                      )}
+                    </div>
+
+                    {stepResult && (
+                      <div className="node-io-box">
+                        <div className="io-line">
+                          <span className="io-muted">Input: </span>
+                          <span className="io-value">{stepResult.input || ' '}</span>
+                        </div>
+                        <div className="io-line separator">↓</div>
+                        <div className="io-line highlighted">
+                          <span className="io-color">Output: </span>
+                          <span className="io-value primary-glow">{stepResult.output || ' '}</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Structural Arrow between nodes */}
+                  {loopIdx < displayNodes.length - 1 && (
+                    <div className="pipeline-connector">
+                      ↓
                     </div>
                   )}
                 </div>
@@ -250,38 +303,38 @@ function App() {
 
         {/* RIGHT PANEL: Execution & Output */}
         <div className="panel right-panel">
-          <h2>[3] Control & Final Output</h2>
+          <h2>[3] Control & Status</h2>
           
           <div className="execution-controls">
             <button 
               className={`run-button ${isRunning ? 'spinning' : ''}`}
-              onClick={handleRun}
-              disabled={isRunning}
+              onClick={handleRunAnimated}
+              disabled={isRunning || Boolean(!inputData.trim() && !isRunning)}
             >
-              {isRunning ? '⚡ PROCESSING...' : '▶ EXECUTE PIPELINE'}
+              {isRunning ? '▶ PROCESSING...' : '▶ EXECUTE PIPELINE'}
             </button>
-            {errorMsg && <div className="error-toast">{errorMsg}</div>}
+            
+            <div className="validation-box">
+              {configurableCount >= 3 
+                ? <div className="status-msg valid">✓ Pipeline configuration valid</div> 
+                : <div className="status-msg invalid">Add at least {3 - configurableCount} configurable ciphers to run.</div>}
+            </div>
           </div>
           
-          <div className="final-output-container">
-            <label className="glow-label">FINAL RESULT</label>
+          <div className="final-output-container mt-auto">
+            <label className="section-label glow-label">FINAL ENCRYPTED OUTPUT</label>
             <textarea 
               value={results.finalOutput} 
               readOnly
               className={`final-output ${results.finalOutput ? 'has-data' : ''}`}
-              placeholder="Result will appear here..."
+              placeholder="..."
               rows={8}
             />
             <button onClick={handleCopy} className="copy-button" disabled={!results.finalOutput}>
-              {copied ? '✓ COPIED' : '📋 Copy Output'}
+              {copied ? '✓ COPIED!' : '📋 Copy Output'}
             </button>
           </div>
           
-          <div className="validation-box mt-auto">
-            {configurableCount >= 3 
-              ? <div className="success-tag">✓ Chain Valid ({configurableCount}/3)</div> 
-              : <div className="warning-tag">⚠ Add {3 - configurableCount} Configurable Cipher(s)</div>}
-          </div>
         </div>
       </div>
     </div>
